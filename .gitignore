@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.npy
+*.joblib
+y_train.csv
+y_test.csv
+.venv/
