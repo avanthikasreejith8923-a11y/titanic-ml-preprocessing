@@ -5,11 +5,12 @@
 ![pandas](https://img.shields.io/badge/pandas-1.4-green)
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
-A leakage-safe data preprocessing pipeline built on the Titanic dataset, using
-`scikit-learn`'s `Pipeline` and `ColumnTransformer`. Every statistic used to
-clean, encode, or scale the data (median, mode, IQR bounds, mean/std) is
-learned **only from the training set**, then applied to the test set —
-the test set never influences how the data is processed.
+A hands-on project applying core data preprocessing techniques to the
+Titanic dataset using `pandas` and `scikit-learn`. Built as a learning
+exercise to practice the full preprocessing workflow an ML engineer uses
+before training a model — handling missing data, encoding categoricals,
+treating outliers, engineering features, and scaling — while avoiding
+data leakage between train and test sets.
 
 ---
 
@@ -17,53 +18,74 @@ the test set never influences how the data is processed.
 
 ```
 Raw Data (891 rows, 12 columns)
-        ↓
-Drop identifier/text columns (PassengerId, Name, Ticket, Cabin)
-        ↓
-Feature Engineering (FamilySize, IsAlone) — row-wise, safe pre-split
-        ↓
-Train/Test Split (stratified on target, 80/20)
-        ↓
-Fit ColumnTransformer on TRAIN ONLY:
-    - Impute missing Age (median) / Embarked (mode)
-    - Clip Fare outliers via IQR (custom transformer)
-    - Scale Age, Fare, FamilySize (StandardScaler)
-    - One-hot encode Sex, Embarked
-        ↓
-Transform TRAIN and TEST with the same fitted pipeline
-        ↓
-Clean, model-ready, leakage-free train/test arrays
+        │
+        ▼
+Drop identifier / free-text columns
+   (PassengerId, Name, Ticket, Cabin)
+        │
+        ▼
+Feature Engineering
+   FamilySize = SibSp + Parch + 1
+   IsAlone    = 1 if FamilySize == 1
+        │
+        ▼
+Train / Test Split  (80 / 20, stratified on Survived)
+        │
+        ▼
+ColumnTransformer fit on TRAIN ONLY
+   ├── Numeric (Age, Fare, FamilySize)
+   │      Impute missing → median
+   │      Clip outliers   → IQR rule (custom transformer)
+   │      Scale           → StandardScaler
+   │
+   └── Categorical (Sex, Embarked)
+          Impute missing → most frequent
+          Encode          → OneHotEncoder
+        │
+        ▼
+Clean, model-ready train/test arrays
 ```
 
 ---
 
-## 🛠️ Why this version is leakage-safe
+## 🛠️ Key Decisions
 
-A common mistake (including in an earlier version of this project) is
-computing the median, scaler statistics, or outlier bounds on the **full**
-dataset before splitting into train/test. This lets information from the
-test set quietly influence preprocessing, which inflates evaluation metrics
-later — the model looks better in development than it will ever perform on
-truly unseen data.
+| Step | Problem | Decision | Reasoning |
+|---|---|---|---|
+| Missing `Age` (177 rows) | Numeric, skewed | Median imputation | Robust to outliers, unlike mean |
+| Missing `Cabin` (687/891) | 77% empty | Dropped column | No imputation recovers a column this sparse |
+| Missing `Embarked` (2 rows) | Categorical | Mode imputation | Fills with the most common port |
+| `Fare` outliers (up to £512 vs. avg £32) | Skews scaling | IQR clipping, before scaling | Outliers distort `StandardScaler`'s mean/std |
+| `Sex`, `Embarked` | Text categories | `OneHotEncoder(drop="first")` | No natural ordering; avoids dummy-variable trap |
+| `SibSp`, `Parch` | Less meaningful alone | Combined into `FamilySize`, `IsAlone` | Captures the same signal more directly |
+| Train/test split | Class imbalance risk | `stratify=Survived` | Keeps survival ratio consistent across both sets |
 
-This version splits **first**, then calls:
-
-```python
-preprocessor.fit_transform(X_train)   # learns + applies, train only
-preprocessor.transform(X_test)        # applies only, never re-fits
-```
-
-so every learned statistic comes exclusively from `X_train`.
+**On data leakage:** all statistics used for imputing, scaling, and
+clipping (median, mean/std, IQR bounds) are learned only from the training
+set via `fit_transform(X_train)`, then applied to the test set via
+`transform(X_test)` — the test set never influences how the data is
+processed.
 
 ---
 
-## 🧩 Custom Transformer: `IQRClipper`
+## 🧩 Custom Transformer
 
-scikit-learn has no built-in "clip outliers by IQR" step, so this project
-includes a small custom transformer (`IQRClipper`) that follows the standard
-`fit`/`transform` contract, learns its bounds only from the data it's fit on,
-and slots directly into a `Pipeline` alongside `SimpleImputer` and
-`StandardScaler`.
+scikit-learn doesn't ship a built-in "clip outliers by IQR" step, so this
+project includes a small custom `IQRClipper` transformer that follows the
+same `fit` / `transform` contract as `StandardScaler` and `SimpleImputer`,
+so it works inside the same `Pipeline`.
+
+---
+
+## 📊 Before → After
+
+| Metric | Raw Data | After Preprocessing |
+|---|---|---|
+| Rows | 891 | 891 |
+| Columns | 12 | 8 |
+| Missing values | 866 | 0 |
+| Text/categorical columns | 5 | 0 |
+| Fare outliers | 116 | 0 (clipped, not removed) |
 
 ---
 
@@ -72,8 +94,9 @@ and slots directly into a `Pipeline` alongside `SimpleImputer` and
 ```
 titanic-ml-preprocessing/
 ├── src/
-│   └── preprocessing.py        # Full pipeline as a Python script
+│   └── preprocessing.py
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
@@ -82,33 +105,28 @@ titanic-ml-preprocessing/
 ## ▶️ How to Run
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/titanic-ml-preprocessing.git
+git clone https://github.com/avanthikasreejith8923-a11y/titanic-ml-preprocessing.git
 cd titanic-ml-preprocessing
 pip install -r requirements.txt
 python src/preprocessing.py
 ```
 
-This will print shape information at each stage and save:
-- `X_train_processed.npy`, `X_test_processed.npy`
-- `y_train.csv`, `y_test.csv`
-- `preprocessor.joblib` — the fitted pipeline, reusable on new incoming data
+**Output:**
+```
+Raw shape: (891, 12)
+Shape after feature engineering: (891, 8)
+Train shape: (712, 7) Test shape: (179, 7)
+Processed train shape: (712, 8)
+Processed test shape: (179, 8)
+```
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **Python 3.10**
-- **pandas** — data loading, cleaning
+- **pandas** — data loading and cleaning
 - **numpy** — IQR calculations
 - **scikit-learn** — `Pipeline`, `ColumnTransformer`, `SimpleImputer`,
-  `StandardScaler`, `OneHotEncoder`, custom `TransformerMixin`
-- **joblib** — persisting the fitted pipeline
-
----
-
-## 🔭 Next Step
-
-This repo currently covers preprocessing only. The saved
-`X_train_processed.npy` / `y_train.csv` files are ready to be fed directly
-into a classifier (Logistic Regression, Random Forest, etc.) — that's the
-next stage of this project.
+  `StandardScaler`, `OneHotEncoder`, `train_test_split`
+- **joblib** — saving the fitted pipeline
