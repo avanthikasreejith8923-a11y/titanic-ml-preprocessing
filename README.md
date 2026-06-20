@@ -6,11 +6,7 @@
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
 A hands-on project applying core data preprocessing techniques to the
-Titanic dataset using `pandas` and `scikit-learn`. Built as a learning
-exercise to practice the full preprocessing workflow an ML engineer uses
-before training a model — handling missing data, encoding categoricals,
-treating outliers, engineering features, and scaling — while avoiding
-data leakage between train and test sets.
+Titanic dataset using `pandas` and `scikit-learn`. 
 
 ---
 
